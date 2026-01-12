@@ -125,6 +125,8 @@ class _CNTabBarState extends State<CNTabBar> {
       );
     }
 
+    final isRTL = Directionality.of(context) == TextDirection.rtl;
+
     final labels = widget.items.map((e) => e.label ?? '').toList();
     final symbols = widget.items.map((e) => e.icon?.name ?? '').toList();
     final sizes = widget.items
@@ -144,6 +146,7 @@ class _CNTabBarState extends State<CNTabBar> {
       'split': widget.split,
       'rightCount': widget.rightCount,
       'splitSpacing': widget.splitSpacing,
+      'isRTL': isRTL,
       'style': encodeStyle(context, tint: _effectiveTint)
         ..addAll({
           if (widget.backgroundColor != null)
