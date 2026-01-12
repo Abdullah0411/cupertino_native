@@ -64,7 +64,11 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
         var image: UIImage? = nil
         if i < symbols.count {   
           let name = symbols[i]
-          image = UIImage(systemName: name) ?? UIImage(named: name)
+          if let sf = UIImage(systemName: name) {
+            image = sf
+          } else if let asset = UIImage(named: name) {
+            image = asset.withRenderingMode(.alwaysTemplate)
+          }
         }
         let title = (i < labels.count) ? labels[i] : nil
         items.append(UITabBarItem(title: title, image: image, selectedImage: image))
