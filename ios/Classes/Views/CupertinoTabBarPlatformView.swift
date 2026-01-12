@@ -21,13 +21,19 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   // Locale direction
   private var isRTL: Bool = false
 
-  // Style state (needed because setLayout rebuilds)
+  // Style state (needed for rebuilds)
   private var isDarkVal: Bool = false
   private var tintVal: UIColor? = nil
   private var bgVal: UIColor? = nil
 
+  // NEW: dim overlay to match Flutter modal barrier
+  private var dimView: UIView?
+
   init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
-    self.channel = FlutterMethodChannel(name: "CupertinoNativeTabBar_\(viewId)", binaryMessenger: messenger)
+    self.channel = FlutterMethodChannel(
+      name: "CupertinoNativeTabBar_\(viewId)",
+      binaryMessenger: messenger
+    )
     self.container = UIView(frame: frame)
 
     var labels: [String] = []
@@ -38,7 +44,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     var bg: UIColor? = nil
     var split: Bool = false
     var rightCount: Int = 1
-    var isRTLArg: Bool = false
+    var rtlArg: Bool = false
     var leftInset: CGFloat = 0
     var rightInset: CGFloat = 0
 
@@ -47,7 +53,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       symbols = (dict["sfSymbols"] as? [String]) ?? []
       if let v = dict["selectedIndex"] as? NSNumber { selectedIndex = v.intValue }
       if let v = dict["isDark"] as? NSNumber { isDark = v.boolValue }
-      if let v = dict["isRTL"] as? NSNumber { isRTLArg = v.boolValue }
+      if let v = dict["isRTL"] as? NSNumber { rtlArg = v.boolValue }
 
       if let style = dict["style"] as? [String: Any] {
         if let n = style["tint"] as? NSNumber { tint = Self.colorFromARGB(n.intValue) }
@@ -58,18 +64,18 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       if let rc = dict["rightCount"] as? NSNumber { rightCount = rc.intValue }
       if let sp = dict["splitSpacing"] as? NSNumber { splitSpacingVal = CGFloat(truncating: sp) }
 
-      // (Flutter padding controls insets; stored but not used here)
+      // optional (if you ever pass them)
       if let li = dict["leftInset"] as? NSNumber { leftInset = CGFloat(truncating: li) }
       if let ri = dict["rightInset"] as? NSNumber { rightInset = CGFloat(truncating: ri) }
     }
 
     super.init()
 
-    // store state
+    // Store state
     self.isDarkVal = isDark
     self.tintVal = tint
     self.bgVal = bg
-    self.isRTL = isRTLArg
+    self.isRTL = rtlArg
     self.isSplit = split
     self.rightCountVal = rightCount
     self.currentLabels = labels
@@ -77,7 +83,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     self.leftInsetVal = leftInset
     self.rightInsetVal = rightInset
 
-    // container style (IMPORTANT: keep it OPAQUE so popup dimming behind doesn't show as "shadow")
+    // Container (keep opaque to avoid bleed artifacts)
     let resolvedBG = resolveBackgroundColor(bg: bg, isDark: isDark)
     container.isOpaque = true
     container.backgroundColor = resolvedBG
@@ -85,10 +91,10 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     if #available(iOS 13.0, *) { container.overrideUserInterfaceStyle = isDark ? .dark : .light }
     applySemanticDirection()
 
-    // build initial bars
+    // Build initial bars
     rebuildBars(selectedIndex: selectedIndex)
 
-    // channel
+    // Channel
     channel.setMethodCallHandler { [weak self] call, result in
       guard let self = self else { result(nil); return }
 
@@ -103,6 +109,14 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         } else {
           result(["width": Double(self.container.bounds.width), "height": 50.0])
         }
+
+      case "setModalDimmed":
+        // Flutter calls this when a modal/barrier is shown/hidden.
+        let args = call.arguments as? [String: Any]
+        let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
+        let opacityNum = (args?["opacity"] as? NSNumber) ?? 0.45
+        self.setDimmed(dimmed, opacity: CGFloat(truncating: opacityNum))
+        result(nil)
 
       case "setItems":
         guard let args = call.arguments as? [String: Any] else {
@@ -124,6 +138,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         self.isSplit = (args["split"] as? NSNumber)?.boolValue ?? self.isSplit
         self.rightCountVal = (args["rightCount"] as? NSNumber)?.intValue ?? self.rightCountVal
         if let sp = args["splitSpacing"] as? NSNumber { self.splitSpacingVal = CGFloat(truncating: sp) }
+
         if let rtl = args["isRTL"] as? NSNumber { self.isRTL = rtl.boolValue; self.applySemanticDirection() }
 
         let selectedIndex = (args["selectedIndex"] as? NSNumber)?.intValue ?? 0
@@ -149,14 +164,12 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         if let n = args["backgroundColor"] as? NSNumber { self.bgVal = Self.colorFromARGB(n.intValue) }
         if let rtl = args["isRTL"] as? NSNumber { self.isRTL = rtl.boolValue }
 
-        // update container to stay opaque (prevents popup dim overlay appearing as "shadow")
         let resolvedBG = self.resolveBackgroundColor(bg: self.bgVal, isDark: self.isDarkVal)
         self.container.isOpaque = true
         self.container.backgroundColor = resolvedBG
         self.container.clipsToBounds = true
-        self.applySemanticDirection()
 
-        // re-apply bar appearance without rebuilding items
+        self.applySemanticDirection()
         self.applyAppearanceToExistingBars()
         result(nil)
 
@@ -209,10 +222,37 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     }
   }
 
+  // MARK: - Dimming
+
+  private func setDimmed(_ dimmed: Bool, opacity: CGFloat) {
+    if dimmed {
+      if dimView == nil {
+        let v = UIView(frame: .zero)
+        v.translatesAutoresizingMaskIntoConstraints = false
+        v.isUserInteractionEnabled = false
+        container.addSubview(v)
+        NSLayoutConstraint.activate([
+          v.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+          v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+          v.topAnchor.constraint(equalTo: container.topAnchor),
+          v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        // Ensure dim is above bars
+        container.bringSubviewToFront(v)
+        dimView = v
+      }
+      dimView?.backgroundColor = UIColor.black.withAlphaComponent(opacity)
+      dimView?.isHidden = false
+      if let v = dimView { container.bringSubviewToFront(v) }
+    } else {
+      dimView?.isHidden = true
+    }
+  }
+
   // MARK: - Build / Update
 
   private func rebuildBars(selectedIndex: Int) {
-    // remove
+    // Remove old
     tabBar?.removeFromSuperview(); tabBar = nil
     tabBarLeft?.removeFromSuperview(); tabBarLeft = nil
     tabBarRight?.removeFromSuperview(); tabBarRight = nil
@@ -319,6 +359,11 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     }
 
     applySemanticDirection()
+
+    // Keep dim overlay (if currently visible) on top
+    if let v = dimView, v.isHidden == false {
+      container.bringSubviewToFront(v)
+    }
   }
 
   private func applySelectedIndex(_ idx: Int) {
@@ -349,9 +394,10 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     if let left = tabBarLeft { applyBarAppearance(left) }
     if let right = tabBarRight { applyBarAppearance(right) }
     applySemanticDirection()
+    if let v = dimView, v.isHidden == false { container.bringSubviewToFront(v) }
   }
 
-  // MARK: - Appearance / Locale
+  // MARK: - Locale / Appearance
 
   private func applySemanticDirection() {
     let semantic: UISemanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
@@ -359,21 +405,20 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
     tabBar?.semanticContentAttribute = semantic
     tabBarLeft?.semanticContentAttribute = semantic
     tabBarRight?.semanticContentAttribute = semantic
+    dimView?.semanticContentAttribute = semantic
   }
 
   private func applyBarAppearance(_ bar: UITabBar) {
-    // IMPORTANT: Keep it opaque so Flutter popup dimming behind does not appear as weird "shadow"
     let resolvedBG = resolveBackgroundColor(bg: bgVal, isDark: isDarkVal)
 
+    // Opaque always (prevents bleed / mismatch)
     bar.isTranslucent = false
     bar.backgroundColor = resolvedBG
     bar.barTintColor = resolvedBG
-
-    // Clip to prevent any bleed-through artifacts
     bar.clipsToBounds = true
     bar.layer.masksToBounds = true
 
-    // Remove default top shadow/separator
+    // Remove default shadow/separator
     if #available(iOS 13.0, *) {
       let ap = UITabBarAppearance()
       ap.configureWithOpaqueBackground()
@@ -382,7 +427,6 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       ap.shadowColor = .clear
       ap.shadowImage = UIImage()
 
-      // Also ensure item colors come from tint/unselected tint
       if let tint = tintVal {
         ap.stackedLayoutAppearance.selected.iconColor = tint
         ap.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: tint]
@@ -409,7 +453,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   // MARK: - Icons
 
   private func resolveIcon(_ name: String) -> UIImage? {
-    // Prefer Runner assets first to avoid SF Symbol name collisions
+    // Prefer Runner assets first to avoid SF Symbol collisions
     if let asset = UIImage(named: name) {
       return asset.withRenderingMode(.alwaysTemplate)
     }
@@ -423,7 +467,6 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 
   private func resolveBackgroundColor(bg: UIColor?, isDark: Bool) -> UIColor {
     if let bg = bg { return bg }
-    // sensible defaults when Flutter didn't pass background
     return isDark ? .black : .white
   }
 

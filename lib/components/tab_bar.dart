@@ -1,3 +1,4 @@
+import 'package:cupertino_native/utils/native_tabbar_dim_controller.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -86,8 +87,7 @@ class _CNTabBarState extends State<CNTabBar> {
   double? _lastSplitSpacing;
 
   bool get _isDark => CupertinoTheme.of(context).brightness == Brightness.dark;
-  Color? get _effectiveTint =>
-      widget.tint ?? CupertinoTheme.of(context).primaryColor;
+  Color? get _effectiveTint => widget.tint ?? CupertinoTheme.of(context).primaryColor;
 
   @override
   void didUpdateWidget(covariant CNTabBar oldWidget) {
@@ -97,25 +97,22 @@ class _CNTabBarState extends State<CNTabBar> {
 
   @override
   void dispose() {
-    _channel?.setMethodCallHandler(null);
+    final ch = _channel;
+    if (ch != null) {
+      NativeTabBarDimController.instance.detach(ch);
+      ch.setMethodCallHandler(null);
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!(defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS)) {
+    if (!(defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS)) {
       // Simple Flutter fallback using CupertinoTabBar for non-Apple platforms.
       return SizedBox(
         height: widget.height,
         child: CupertinoTabBar(
-          items: [
-            for (final item in widget.items)
-              BottomNavigationBarItem(
-                icon: Icon(CupertinoIcons.circle),
-                label: item.label,
-              ),
-          ],
+          items: [for (final item in widget.items) BottomNavigationBarItem(icon: Icon(CupertinoIcons.circle), label: item.label)],
           currentIndex: widget.currentIndex,
           onTap: widget.onTap,
           backgroundColor: widget.backgroundColor,
@@ -129,12 +126,8 @@ class _CNTabBarState extends State<CNTabBar> {
 
     final labels = widget.items.map((e) => e.label ?? '').toList();
     final symbols = widget.items.map((e) => e.icon?.name ?? '').toList();
-    final sizes = widget.items
-        .map((e) => (widget.iconSize ?? e.icon?.size))
-        .toList();
-    final colors = widget.items
-        .map((e) => resolveColorToArgb(e.icon?.color, context))
-        .toList();
+    final sizes = widget.items.map((e) => (widget.iconSize ?? e.icon?.size)).toList();
+    final colors = widget.items.map((e) => resolveColorToArgb(e.icon?.color, context)).toList();
 
     final creationParams = <String, dynamic>{
       'labels': labels,
@@ -148,13 +141,7 @@ class _CNTabBarState extends State<CNTabBar> {
       'splitSpacing': widget.splitSpacing,
       'isRTL': isRTL,
       'style': encodeStyle(context, tint: _effectiveTint)
-        ..addAll({
-          if (widget.backgroundColor != null)
-            'backgroundColor': resolveColorToArgb(
-              widget.backgroundColor,
-              context,
-            ),
-        }),
+        ..addAll({if (widget.backgroundColor != null) 'backgroundColor': resolveColorToArgb(widget.backgroundColor, context)}),
     };
 
     final viewType = 'CupertinoNativeTabBar';
@@ -183,6 +170,9 @@ class _CNTabBarState extends State<CNTabBar> {
   void _onCreated(int id) {
     final ch = MethodChannel('CupertinoNativeTabBar_$id');
     _channel = ch;
+
+    NativeTabBarDimController.instance.attach(ch);
+
     ch.setMethodCallHandler(_onMethodCall);
     _lastIndex = widget.currentIndex;
     _lastTint = resolveColorToArgb(_effectiveTint, context);
@@ -235,13 +225,8 @@ class _CNTabBarState extends State<CNTabBar> {
     // Items update (for hot reload or dynamic changes)
     final labels = widget.items.map((e) => e.label ?? '').toList();
     final symbols = widget.items.map((e) => e.icon?.name ?? '').toList();
-    if (_lastLabels?.join('|') != labels.join('|') ||
-        _lastSymbols?.join('|') != symbols.join('|')) {
-      await ch.invokeMethod('setItems', {
-        'labels': labels,
-        'sfSymbols': symbols,
-        'selectedIndex': widget.currentIndex,
-      });
+    if (_lastLabels?.join('|') != labels.join('|') || _lastSymbols?.join('|') != symbols.join('|')) {
+      await ch.invokeMethod('setItems', {'labels': labels, 'sfSymbols': symbols, 'selectedIndex': widget.currentIndex});
       _lastLabels = labels;
       _lastSymbols = symbols;
       // Re-measure width in case content changed
@@ -249,14 +234,15 @@ class _CNTabBarState extends State<CNTabBar> {
     }
 
     // Layout updates (split / insets)
-    if (_lastSplit != widget.split ||
-        _lastRightCount != widget.rightCount ||
-        _lastSplitSpacing != widget.splitSpacing) {
+    if (_lastSplit != widget.split || _lastRightCount != widget.rightCount || _lastSplitSpacing != widget.splitSpacing) {
+      final isRTL = Directionality.of(context) == TextDirection.rtl;
+
       await ch.invokeMethod('setLayout', {
         'split': widget.split,
         'rightCount': widget.rightCount,
         'splitSpacing': widget.splitSpacing,
         'selectedIndex': widget.currentIndex,
+        'isRTL': isRTL,
       });
       _lastSplit = widget.split;
       _lastRightCount = widget.rightCount;
