@@ -18,7 +18,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
   private var rightInsetVal: CGFloat = 0
   private var splitSpacingVal: CGFloat = 8
 
-  // NEW: locale direction
+  // Locale direction (Flutter passes isRTL)
   private var isRTL: Bool = false
 
   init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
@@ -35,17 +35,15 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
     var rightCount: Int = 1
     var leftInset: CGFloat = 0
     var rightInset: CGFloat = 0
-    var isRTLArg: Bool = false
+    var rtlArg: Bool = false
 
     if let dict = args as? [String: Any] {
       labels = (dict["labels"] as? [String]) ?? []
       symbols = (dict["sfSymbols"] as? [String]) ?? []
-
       if let v = dict["selectedIndex"] as? NSNumber { selectedIndex = v.intValue }
       if let v = dict["isDark"] as? NSNumber { isDark = v.boolValue }
 
-      // NEW: receive direction from Flutter
-      if let v = dict["isRTL"] as? NSNumber { isRTLArg = v.boolValue }
+      if let v = dict["isRTL"] as? NSNumber { rtlArg = v.boolValue }
 
       if let style = dict["style"] as? [String: Any] {
         if let n = style["tint"] as? NSNumber { tint = Self.colorFromARGB(n.intValue) }
@@ -56,7 +54,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
       if let rc = dict["rightCount"] as? NSNumber { rightCount = rc.intValue }
       if let sp = dict["splitSpacing"] as? NSNumber { splitSpacingVal = CGFloat(truncating: sp) }
 
-      // content insets controlled by Flutter padding; keep zero here
+      // keep these (Flutter padding controls insets)
       _ = leftInset
       _ = rightInset
     }
@@ -68,40 +66,67 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
       container.overrideUserInterfaceStyle = isDark ? .dark : .light
     }
 
-    // Store direction + apply to container early
-    self.isRTL = isRTLArg
+    self.isRTL = rtlArg
     applySemanticDirection(isRTL: self.isRTL)
 
+    // Appearance (no weird shadow)
     let appearance: UITabBarAppearance? = {
       if #available(iOS 13.0, *) {
         let ap = UITabBarAppearance()
-        ap.configureWithDefaultBackground()
+        // choose one:
+        // ap.configureWithDefaultBackground()   // system default (may blur)
+        ap.configureWithOpaqueBackground()       // solid background
+        ap.backgroundColor = bg ?? .clear
+
+        // ✅ remove shadow line / shadow
+        ap.shadowColor = .clear
+        ap.shadowImage = UIImage()
+        ap.backgroundEffect = nil
         return ap
       }
       return nil
     }()
 
-    // Icon resolver (SF Symbol OR Runner Assets)
+    // Icon resolver: SF Symbols OR Runner Assets (PDF)
     func resolveIcon(_ name: String) -> UIImage? {
-      // Prefer SF Symbols first (keep if you want), OR prefer assets first.
-      // If you worry about name collisions, swap these two blocks.
-      if let sf = UIImage(systemName: name) {
-        return sf
-      }
+      // Prefer asset first to avoid SF Symbol name collisions
       if let asset = UIImage(named: name) {
         return asset.withRenderingMode(.alwaysTemplate)
       }
+      if let sf = UIImage(systemName: name) {
+        return sf
+      }
       return nil
+    }
+
+    func styleBar(_ bar: UITabBar) {
+      // remove shadow for iOS 12 and below
+      if #unavailable(iOS 13.0) {
+        bar.shadowImage = UIImage()
+        bar.backgroundImage = UIImage()
+        if let bg = bg { bar.barTintColor = bg }
+      }
+
+      if #available(iOS 10.0, *), let tint = tint {
+        bar.tintColor = tint
+        bar.unselectedItemTintColor = tint.withAlphaComponent(0.6)
+      }
+
+      if let ap = appearance, #available(iOS 13.0, *) {
+        bar.standardAppearance = ap
+        if #available(iOS 15.0, *) { bar.scrollEdgeAppearance = ap }
+      }
+
+      bar.isTranslucent = false
+      bar.backgroundColor = bg ?? .clear
+      bar.semanticContentAttribute = self.isRTL ? .forceRightToLeft : .forceLeftToRight
     }
 
     func buildItems(_ range: Range<Int>) -> [UITabBarItem] {
       var items: [UITabBarItem] = []
       for i in range {
         let title = (i < labels.count) ? labels[i] : nil
-        var image: UIImage? = nil
-        if i < symbols.count {
-          image = resolveIcon(symbols[i])
-        }
+        let image: UIImage? = (i < symbols.count) ? resolveIcon(symbols[i]) : nil
         items.append(UITabBarItem(title: title, image: image, selectedImage: image))
       }
       return items
@@ -123,28 +148,8 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
       left.delegate = self
       right.delegate = self
 
-      // Apply direction to bars
-      applySemanticDirection(isRTL: self.isRTL, bars: [left, right])
-
-      if let bg = bg {
-        left.barTintColor = bg
-        right.barTintColor = bg
-      }
-      if #available(iOS 10.0, *), let tint = tint {
-        left.tintColor = tint
-        right.tintColor = tint
-        left.unselectedItemTintColor = tint.withAlphaComponent(0.6)
-        right.unselectedItemTintColor = tint.withAlphaComponent(0.6)
-      }
-
-      if let ap = appearance, #available(iOS 13.0, *) {
-        left.standardAppearance = ap
-        right.standardAppearance = ap
-        if #available(iOS 15.0, *) {
-          left.scrollEdgeAppearance = ap
-          right.scrollEdgeAppearance = ap
-        }
-      }
+      styleBar(left)
+      styleBar(right)
 
       left.items = buildItems(0..<leftEnd)
       right.items = buildItems(leftEnd..<count)
@@ -202,19 +207,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
       bar.delegate = self
       bar.translatesAutoresizingMaskIntoConstraints = false
 
-      // Apply direction to bar
-      applySemanticDirection(isRTL: self.isRTL, bars: [bar])
-
-      if let bg = bg { bar.barTintColor = bg }
-      if #available(iOS 10.0, *), let tint = tint {
-        bar.tintColor = tint
-        bar.unselectedItemTintColor = tint.withAlphaComponent(0.6)
-      }
-
-      if let ap = appearance, #available(iOS 13.0, *) {
-        bar.standardAppearance = ap
-        if #available(iOS 15.0, *) { bar.scrollEdgeAppearance = ap }
-      }
+      styleBar(bar)
 
       bar.items = buildItems(0..<count)
       if selectedIndex >= 0, let items = bar.items, selectedIndex < items.count {
@@ -246,7 +239,9 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
 
       case "getIntrinsicSize":
         if let bar = self.tabBar ?? self.tabBarLeft ?? self.tabBarRight {
-          let size = bar.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude))
+          let size = bar.sizeThatFits(
+            CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+          )
           result(["width": Double(size.width), "height": Double(size.height)])
         } else {
           result(["width": Double(self.container.bounds.width), "height": 50.0])
@@ -261,12 +256,13 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
         let labels = (args["labels"] as? [String]) ?? []
         let symbols = (args["sfSymbols"] as? [String]) ?? []
         let selectedIndex = (args["selectedIndex"] as? NSNumber)?.intValue ?? 0
+
         self.currentLabels = labels
         self.currentSymbols = symbols
 
         func resolveIcon(_ name: String) -> UIImage? {
-          if let sf = UIImage(systemName: name) { return sf }
           if let asset = UIImage(named: name) { return asset.withRenderingMode(.alwaysTemplate) }
+          if let sf = UIImage(systemName: name) { return sf }
           return nil
         }
 
@@ -274,8 +270,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           var items: [UITabBarItem] = []
           for i in range {
             let title = (i < labels.count) ? labels[i] : nil
-            var image: UIImage? = nil
-            if i < symbols.count { image = resolveIcon(symbols[i]) }
+            let image: UIImage? = (i < symbols.count) ? resolveIcon(symbols[i]) : nil
             items.append(UITabBarItem(title: title, image: image, selectedImage: image))
           }
           return items
@@ -317,20 +312,14 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
 
         let split = (args["split"] as? NSNumber)?.boolValue ?? false
         let rightCount = (args["rightCount"] as? NSNumber)?.intValue ?? 1
+        if let sp = args["splitSpacing"] as? NSNumber { self.splitSpacingVal = CGFloat(truncating: sp) }
+        let selectedIndex = (args["selectedIndex"] as? NSNumber)?.intValue ?? 0
 
-        if let sp = args["splitSpacing"] as? NSNumber {
-          self.splitSpacingVal = CGFloat(truncating: sp)
-        }
-
-        // NEW: allow updating RTL when locale changes
+        // Update RTL if provided
         if let rtl = (args["isRTL"] as? NSNumber)?.boolValue {
           self.isRTL = rtl
+          self.applySemanticDirection(isRTL: self.isRTL)
         }
-        self.applySemanticDirection(isRTL: self.isRTL)
-
-        let selectedIndex = (args["selectedIndex"] as? NSNumber)?.intValue ?? 0
-        let leftInset = self.leftInsetVal
-        let rightInset = self.rightInsetVal
 
         // Remove existing bars
         self.tabBar?.removeFromSuperview(); self.tabBar = nil
@@ -340,27 +329,53 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
         let labels = self.currentLabels
         let symbols = self.currentSymbols
 
+        // rebuild appearance (keeps shadow removed, bg applied)
         let appearance: UITabBarAppearance? = {
           if #available(iOS 13.0, *) {
             let ap = UITabBarAppearance()
-            ap.configureWithDefaultBackground()
+            ap.configureWithOpaqueBackground()
+            ap.backgroundColor = bg ?? .clear
+            ap.shadowColor = .clear
+            ap.shadowImage = UIImage()
+            ap.backgroundEffect = nil
             return ap
           }
           return nil
         }()
 
         func resolveIcon(_ name: String) -> UIImage? {
-          if let sf = UIImage(systemName: name) { return sf }
           if let asset = UIImage(named: name) { return asset.withRenderingMode(.alwaysTemplate) }
+          if let sf = UIImage(systemName: name) { return sf }
           return nil
+        }
+
+        func styleBar(_ bar: UITabBar) {
+          if #unavailable(iOS 13.0) {
+            bar.shadowImage = UIImage()
+            bar.backgroundImage = UIImage()
+            if let bg = bg { bar.barTintColor = bg }
+          }
+
+          if #available(iOS 10.0, *), let tint = tint {
+            bar.tintColor = tint
+            bar.unselectedItemTintColor = tint.withAlphaComponent(0.6)
+          }
+
+          if let ap = appearance, #available(iOS 13.0, *) {
+            bar.standardAppearance = ap
+            if #available(iOS 15.0, *) { bar.scrollEdgeAppearance = ap }
+          }
+
+          bar.isTranslucent = false
+          bar.backgroundColor = bg ?? .clear
+          bar.semanticContentAttribute = self.isRTL ? .forceRightToLeft : .forceLeftToRight
         }
 
         func buildItems(_ range: Range<Int>) -> [UITabBarItem] {
           var items: [UITabBarItem] = []
           for i in range {
             let title = (i < labels.count) ? labels[i] : nil
-            var image: UIImage? = nil
-            if i < symbols.count { image = resolveIcon(symbols[i]) }
+            let image: UIImage? = (i < symbols.count) ? resolveIcon(symbols[i]) : nil
             items.append(UITabBarItem(title: title, image: image, selectedImage: image))
           }
           return items
@@ -381,17 +396,8 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           left.delegate = self
           right.delegate = self
 
-          // Apply direction
-          self.applySemanticDirection(isRTL: self.isRTL, bars: [left, right])
-
-          if let ap = appearance, #available(iOS 13.0, *) {
-            left.standardAppearance = ap
-            right.standardAppearance = ap
-            if #available(iOS 15.0, *) {
-              left.scrollEdgeAppearance = ap
-              right.scrollEdgeAppearance = ap
-            }
-          }
+          styleBar(left)
+          styleBar(right)
 
           left.items = buildItems(0..<leftEnd)
           right.items = buildItems(leftEnd..<count)
@@ -409,31 +415,31 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           self.container.addSubview(right)
 
           let spacing: CGFloat = self.splitSpacingVal
-          let leftWidth = left.sizeThatFits(.zero).width + leftInset * 2
-          let rightWidth = right.sizeThatFits(.zero).width + rightInset * 2
+          let leftWidth = left.sizeThatFits(.zero).width + self.leftInsetVal * 2
+          let rightWidth = right.sizeThatFits(.zero).width + self.rightInsetVal * 2
           let total = leftWidth + rightWidth + spacing
 
           if total > self.container.bounds.width {
             let rightFraction = CGFloat(rightCount) / CGFloat(count)
             NSLayoutConstraint.activate([
-              right.trailingAnchor.constraint(equalTo: self.container.trailingAnchor, constant: -rightInset),
+              right.trailingAnchor.constraint(equalTo: self.container.trailingAnchor, constant: -self.rightInsetVal),
               right.topAnchor.constraint(equalTo: self.container.topAnchor),
               right.bottomAnchor.constraint(equalTo: self.container.bottomAnchor),
               right.widthAnchor.constraint(equalTo: self.container.widthAnchor, multiplier: rightFraction),
 
-              left.leadingAnchor.constraint(equalTo: self.container.leadingAnchor, constant: leftInset),
+              left.leadingAnchor.constraint(equalTo: self.container.leadingAnchor, constant: self.leftInsetVal),
               left.trailingAnchor.constraint(equalTo: right.leadingAnchor, constant: -spacing),
               left.topAnchor.constraint(equalTo: self.container.topAnchor),
               left.bottomAnchor.constraint(equalTo: self.container.bottomAnchor),
             ])
           } else {
             NSLayoutConstraint.activate([
-              right.trailingAnchor.constraint(equalTo: self.container.trailingAnchor, constant: -rightInset),
+              right.trailingAnchor.constraint(equalTo: self.container.trailingAnchor, constant: -self.rightInsetVal),
               right.topAnchor.constraint(equalTo: self.container.topAnchor),
               right.bottomAnchor.constraint(equalTo: self.container.bottomAnchor),
               right.widthAnchor.constraint(equalToConstant: rightWidth),
 
-              left.leadingAnchor.constraint(equalTo: self.container.leadingAnchor, constant: leftInset),
+              left.leadingAnchor.constraint(equalTo: self.container.leadingAnchor, constant: self.leftInsetVal),
               left.topAnchor.constraint(equalTo: self.container.topAnchor),
               left.bottomAnchor.constraint(equalTo: self.container.bottomAnchor),
               left.widthAnchor.constraint(equalToConstant: leftWidth),
@@ -449,13 +455,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           bar.delegate = self
           bar.translatesAutoresizingMaskIntoConstraints = false
 
-          // Apply direction
-          self.applySemanticDirection(isRTL: self.isRTL, bars: [bar])
-
-          if let ap = appearance, #available(iOS 13.0, *) {
-            bar.standardAppearance = ap
-            if #available(iOS 15.0, *) { bar.scrollEdgeAppearance = ap }
-          }
+          styleBar(bar)
 
           bar.items = buildItems(0..<count)
           if let items = bar.items, selectedIndex >= 0, selectedIndex < items.count {
@@ -484,14 +484,12 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           return
         }
 
-        // Single bar
         if let bar = self.tabBar, let items = bar.items, idx >= 0, idx < items.count {
           bar.selectedItem = items[idx]
           result(nil)
           return
         }
 
-        // Split bars
         if let left = self.tabBarLeft, let leftItems = left.items {
           if idx < leftItems.count, idx >= 0 {
             left.selectedItem = leftItems[idx]
@@ -536,12 +534,11 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
 
         if let n = args["backgroundColor"] as? NSNumber {
           let c = Self.colorFromARGB(n.intValue)
-          if let bar = self.tabBar { bar.barTintColor = c }
-          if let left = self.tabBarLeft { left.barTintColor = c }
-          if let right = self.tabBarRight { right.barTintColor = c }
+          if let bar = self.tabBar { bar.backgroundColor = c; bar.barTintColor = c }
+          if let left = self.tabBarLeft { left.backgroundColor = c; left.barTintColor = c }
+          if let right = self.tabBarRight { right.backgroundColor = c; right.barTintColor = c }
         }
 
-        // Optional: update direction too if you want
         if let rtl = (args["isRTL"] as? NSNumber)?.boolValue {
           self.isRTL = rtl
           self.applySemanticDirection(isRTL: self.isRTL)
@@ -557,6 +554,7 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
           result(FlutterError(code: "bad_args", message: "Missing isDark", details: nil))
           return
         }
+
         if #available(iOS 13.0, *) {
           self.container.overrideUserInterfaceStyle = isDark ? .dark : .light
         }
@@ -571,18 +569,17 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
   func view() -> UIView { container }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-    // Single bar case
     if let single = self.tabBar, single === tabBar, let items = single.items, let idx = items.firstIndex(of: item) {
       channel.invokeMethod("valueChanged", arguments: ["index": idx])
       return
     }
-    // Split left
+
     if let left = tabBarLeft, left === tabBar, let items = left.items, let idx = items.firstIndex(of: item) {
       tabBarRight?.selectedItem = nil
       channel.invokeMethod("valueChanged", arguments: ["index": idx])
       return
     }
-    // Split right
+
     if let right = tabBarRight, right === tabBar, let items = right.items, let idx = items.firstIndex(of: item),
        let left = tabBarLeft, let leftItems = left.items {
       tabBarLeft?.selectedItem = nil
@@ -591,19 +588,12 @@ class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBarDelega
     }
   }
 
-  // MARK: - Direction helper
-
-  private func applySemanticDirection(isRTL: Bool, bars: [UITabBar]? = nil) {
+  private func applySemanticDirection(isRTL: Bool) {
     let semantic: UISemanticContentAttribute = isRTL ? .forceRightToLeft : .forceLeftToRight
     container.semanticContentAttribute = semantic
-
-    if let bars = bars {
-      bars.forEach { $0.semanticContentAttribute = semantic }
-    } else {
-      tabBar?.semanticContentAttribute = semantic
-      tabBarLeft?.semanticContentAttribute = semantic
-      tabBarRight?.semanticContentAttribute = semantic
-    }
+    tabBar?.semanticContentAttribute = semantic
+    tabBarLeft?.semanticContentAttribute = semantic
+    tabBarRight?.semanticContentAttribute = semantic
   }
 
   private static func colorFromARGB(_ argb: Int) -> UIColor {
