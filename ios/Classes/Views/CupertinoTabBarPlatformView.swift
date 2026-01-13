@@ -236,8 +236,8 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 // Inside CupertinoTabBarPlatformView class
 
 private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-    // 1. Handle "Off" state
-    guard dimmed, blurSigma > 0.01 else {
+    // 1. Clean exit if not dimmed
+    guard dimmed, blurSigma > 0.1 else {
         dimOverlay?.isHidden = true
         blurAnimator?.stopAnimation(true)
         blurAnimator = nil
@@ -245,19 +245,21 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
         return
     }
 
-    // 2. Lazy Create Overlay
+    // 2. Initialize Views if needed
     if dimOverlay == nil {
         let overlay = UIView()
         overlay.translatesAutoresizingMaskIntoConstraints = false
-        overlay.isUserInteractionEnabled = false // CRITICAL: allows taps to pass through
+        overlay.isUserInteractionEnabled = false // Allow taps to hit the barrier
         container.addSubview(overlay)
 
+        // FIX FOR THE WEIRD LINE: 
+        // We set the top constant to -3.0. This makes the native overlay 
+        // overlap the Flutter boundary slightly, killing the seam.
         NSLayoutConstraint.activate([
             overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            // OVER-EXTEND top by 2pts to hide the "weird line" seam
-            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -2.0)
+            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -3.0) 
         ])
 
         let blurView = UIVisualEffectView(effect: nil)
@@ -285,18 +287,17 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
         self.dimTintView = tintView
     }
 
-    // 3. Update Visuals
+    // 3. Update visibility and bring to front
     dimOverlay?.isHidden = false
     container.bringSubviewToFront(dimOverlay!)
-    
-    // Smoothly apply tint opacity
-    dimTintView?.backgroundColor = color 
+    dimTintView?.backgroundColor = color
 
-    // 4. Scrub Blur Animator
+    // 4. Scrub the blur animation
     let style: UIBlurEffect.Style = isDarkVal ? .systemMaterialDark : .systemMaterialLight
     
     if blurAnimator == nil {
         dimBlurView?.effect = nil
+        // Using a linear animator allows us to map Flutter's 0.0-1.0 progress exactly
         let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
             self?.dimBlurView?.effect = UIBlurEffect(style: style)
         }
@@ -306,7 +307,7 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
         self.blurAnimator = animator
     }
 
-    // Map Sigma (usually 0-5 or 0-10) to fraction (0.0 - 1.0)
+    // Map the Sigma value to the animator fraction (usually 0.0 to 1.0)
     let intensity = CGFloat(min(blurSigma / 10.0, 1.0))
     blurAnimator?.fractionComplete = intensity
 }

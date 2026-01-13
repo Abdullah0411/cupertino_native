@@ -11,41 +11,45 @@ class NativeTabBarDimObserver extends NavigatorObserver {
 
   bool _isDimRoute(Route<dynamic>? r) {
     if (r == null) return false;
-    if (r is PopupRoute) return true;
     final t = r.runtimeType.toString();
-    return t.contains('ModalBottomSheet') || t.contains('CupertinoModalPopup') || t.contains('DialogRoute');
+    return r is PopupRoute || t.contains('ModalBottomSheet') || t.contains('CupertinoModalPopup') || t.contains('DialogRoute');
   }
 
-  void _handleAnimation(Route route) {
+  void _sync(Route route) {
     if (route is ModalRoute) {
       final progress = route.animation?.value ?? 0.0;
-      final isVisible = progress > 0.001; // Avoid jitter at zero
-
+      // We only send 'dimmed: true' if the animation has actually started
+      final isVisible = progress > 0.01;
       final color = route.barrierColor ?? fallbackBarrierColor;
 
-      NativeTabBarDimController.instance.setDimmed(dimmed: isVisible, colorArgb: color.value, blurSigma: blurSigma * progress);
+      NativeTabBarDimController.instance.setDimmed(
+        dimmed: isVisible,
+        colorArgb: color.value,
+        blurSigma: blurSigma * progress, // Sync blur intensity to animation
+      );
     }
   }
 
   @override
   void didPush(Route route, Route? previousRoute) {
     if (_isDimRoute(route) && route is ModalRoute) {
-      final listener = () => _handleAnimation(route);
+      final listener = () => _sync(route);
       _listeners[route] = listener;
       route.animation?.addListener(listener);
     }
+    super.didPush(route, previousRoute);
   }
 
   @override
   void didPop(Route route, Route? previousRoute) {
     final listener = _listeners.remove(route);
     if (listener != null && route is ModalRoute) {
-      // Ensure it continues to sync while animating out
       route.animation?.removeListener(listener);
-      // Final sync to clean up
+      // Ensure we clear the dim if we are returning to a non-dimmed screen
       if (previousRoute == null || !_isDimRoute(previousRoute)) {
         NativeTabBarDimController.instance.setDimmed(dimmed: false, colorArgb: 0, blurSigma: 0);
       }
     }
+    super.didPop(route, previousRoute);
   }
 }
