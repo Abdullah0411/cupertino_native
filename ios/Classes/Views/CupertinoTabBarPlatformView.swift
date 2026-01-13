@@ -28,6 +28,10 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 
   // NEW: dim overlay to match Flutter modal barrier
   private var dimView: UIView?
+  private var dimOverlay: UIView?
+  private var dimBlurView: UIVisualEffectView?
+  private var dimTintView: UIView?
+  private var blurAnimator: UIViewPropertyAnimator?
 
   init(frame: CGRect, viewId: Int64, args: Any?, messenger: FlutterBinaryMessenger) {
     self.channel = FlutterMethodChannel(
@@ -114,15 +118,14 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         let args = call.arguments as? [String: Any]
         let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
 
-        // Flutter sends ARGB int in "color"
-        if let colorNum = args?["color"] as? NSNumber {
-          let uiColor = Self.colorFromARGB(colorNum.intValue)
-          self.setDimmed(dimmed, color: uiColor)
-        } else {
-         // fallback if color not provided
-        self.setDimmed(dimmed, color: UIColor.black.withAlphaComponent(0.45))
-  }
+        let colorInt = (args?["color"] as? NSNumber)?.intValue
+        let color = colorInt != nil
+        ? Self.colorFromARGB(colorInt!)
+        : UIColor.black.withAlphaComponent(0.3)
 
+        let blurSigma = (args?["blurSigma"] as? NSNumber)?.doubleValue ?? 0.0
+
+        self.setDimmed(dimmed, color: color, blurSigma: blurSigma)
         result(nil)
 
       case "setItems":
@@ -230,29 +233,85 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   }
 
   // MARK: - Dimming
-
-private func setDimmed(_ dimmed: Bool, color: UIColor) {
+private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
   if dimmed {
-    if dimView == nil {
-      let v = UIView(frame: .zero)
-      v.translatesAutoresizingMaskIntoConstraints = false
-      v.isUserInteractionEnabled = false
-      container.addSubview(v)
+    if dimOverlay == nil {
+      let overlay = UIView(frame: .zero)
+      overlay.translatesAutoresizingMaskIntoConstraints = false
+      overlay.isUserInteractionEnabled = false
+      overlay.backgroundColor = .clear
+      container.addSubview(overlay)
       NSLayoutConstraint.activate([
-        v.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-        v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        v.topAnchor.constraint(equalTo: container.topAnchor),
-        v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        overlay.topAnchor.constraint(equalTo: container.topAnchor),
+        overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
       ])
-      dimView = v
+
+      // Blur
+      let blurView = UIVisualEffectView(effect: nil)
+      blurView.translatesAutoresizingMaskIntoConstraints = false
+      blurView.isUserInteractionEnabled = false
+      overlay.addSubview(blurView)
+      NSLayoutConstraint.activate([
+        blurView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+        blurView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+        blurView.topAnchor.constraint(equalTo: overlay.topAnchor),
+        blurView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+      ])
+
+      // Tint
+      let tintView = UIView(frame: .zero)
+      tintView.translatesAutoresizingMaskIntoConstraints = false
+      tintView.isUserInteractionEnabled = false
+      overlay.addSubview(tintView)
+      NSLayoutConstraint.activate([
+        tintView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+        tintView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+        tintView.topAnchor.constraint(equalTo: overlay.topAnchor),
+        tintView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+      ])
+
+      dimOverlay = overlay
+      dimBlurView = blurView
+      dimTintView = tintView
     }
-    dimView?.backgroundColor = color
-    dimView?.isHidden = false
-    if let v = dimView { container.bringSubviewToFront(v) }
+
+    dimTintView?.backgroundColor = color
+    dimOverlay?.isHidden = false
+    if let overlay = dimOverlay { container.bringSubviewToFront(overlay) }
+
+    // ---- Animatable blur intensity via fractionComplete ----
+    let style: UIBlurEffect.Style = isDarkVal ? .systemMaterialDark : .systemMaterialLight
+    let targetEffect = UIBlurEffect(style: style)
+
+    // Create animator once (or recreate if you prefer)
+    if blurAnimator == nil || blurAnimator?.state == .inactive {
+      dimBlurView?.effect = nil
+      let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
+        self?.dimBlurView?.effect = targetEffect
+      }
+      animator.pausesOnCompletion = true
+      animator.startAnimation()
+      animator.pauseAnimation()
+      blurAnimator = animator
+    }
+
+    // Map Flutter sigma -> iOS blur intensity [0..1]
+    // You can't match sigma exactly with UIKit, but this gets *very* close visually.
+    let maxSigma = 10.0 // tune this to your UI; if your blur is 5, maxSigma=10 is a good mapping
+    let t = max(0.0, min(1.0, blurSigma / maxSigma))
+    blurAnimator?.fractionComplete = CGFloat(t)
+
   } else {
-    dimView?.isHidden = true
+    dimOverlay?.isHidden = true
+    // reset blur so next time starts clean
+    blurAnimator?.stopAnimation(true)
+    blurAnimator = nil
+    dimBlurView?.effect = nil
   }
 }
+
 
 
   // MARK: - Build / Update
