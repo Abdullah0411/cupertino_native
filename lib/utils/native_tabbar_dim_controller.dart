@@ -14,11 +14,11 @@ class NativeTabBarDimController {
     if (_channel == channel) _channel = null;
   }
 
-  Future<void> setDimmed(bool dimmed, {double opacity = 0.45}) async {
+  Future<void> setDimmedWithColor(bool dimmed, int argbColor) async {
     final ch = _channel;
     if (ch == null) return;
     try {
-      await ch.invokeMethod('setModalDimmed', {'dimmed': dimmed, 'opacity': opacity});
+      await ch.invokeMethod('setModalDimmed', {'dimmed': dimmed, 'color': argbColor});
     } catch (_) {}
   }
 }

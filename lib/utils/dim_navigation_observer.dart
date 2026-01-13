@@ -1,14 +1,12 @@
 import 'dart:async';
 import 'package:flutter/widgets.dart';
-import 'package:flutter/services.dart';
+import 'native_tabbar_dim_controller.dart';
 
 class NativeTabBarDimObserver extends NavigatorObserver {
   NativeTabBarDimObserver({
-    required this.channel,
     this.fallbackBarrierColor = const Color(0x8A000000), // black54-ish
   });
 
-  final MethodChannel channel;
   final Color fallbackBarrierColor;
 
   final List<int> _barrierStack = []; // ARGB ints
@@ -22,18 +20,14 @@ class NativeTabBarDimObserver extends NavigatorObserver {
   }
 
   int _barrierArgbFor(Route<dynamic> r) {
-    // PopupRoute has barrierColor
     if (r is PopupRoute) {
       final c = r.barrierColor ?? fallbackBarrierColor;
       return c.value; // ARGB
     }
-
-    // Some ModalRoutes also expose barrierColor
     if (r is ModalRoute) {
       final c = r.barrierColor ?? fallbackBarrierColor;
       return c.value;
     }
-
     return fallbackBarrierColor.value;
   }
 
@@ -42,12 +36,7 @@ class NativeTabBarDimObserver extends NavigatorObserver {
     final color = dimmed ? _barrierStack.last : 0;
 
     scheduleMicrotask(() async {
-      try {
-        await channel.invokeMethod('setModalDimmed', {
-          'dimmed': dimmed,
-          'color': color, // ARGB int
-        });
-      } catch (_) {}
+      await NativeTabBarDimController.instance.setDimmedWithColor(dimmed, color);
     });
   }
 

@@ -111,14 +111,18 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         }
 
       case "setModalDimmed":
-        // Flutter calls this when a modal/barrier is shown/hidden.
         let args = call.arguments as? [String: Any]
         let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
 
-        let colorInt = (args?["color"] as? NSNumber)?.intValue
-        let color = colorInt != nil ? Self.colorFromARGB(colorInt!) : UIColor.black.withAlphaComponent(0.45)
+        // Flutter sends ARGB int in "color"
+        if let colorNum = args?["color"] as? NSNumber {
+          let uiColor = Self.colorFromARGB(colorNum.intValue)
+          self.setDimmed(dimmed, color: uiColor)
+        } else {
+         // fallback if color not provided
+        self.setDimmed(dimmed, color: UIColor.black.withAlphaComponent(0.45))
+  }
 
-        self.setDimmed(dimmed, color: color)
         result(nil)
 
       case "setItems":
