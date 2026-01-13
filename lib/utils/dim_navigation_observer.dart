@@ -7,80 +7,45 @@ class NativeTabBarDimObserver extends NavigatorObserver {
 
   final Color fallbackBarrierColor;
   final double blurSigma;
-
-  final List<_DimState> _stack = [];
+  final Map<Route, VoidCallback> _listeners = {};
 
   bool _isDimRoute(Route<dynamic>? r) {
     if (r == null) return false;
     if (r is PopupRoute) return true;
-
     final t = r.runtimeType.toString();
-    return t.contains('ModalBottomSheet') || t.contains('CupertinoModalPopup') || t.contains('DialogRoute') || t.contains('RawDialogRoute');
+    return t.contains('ModalBottomSheet') || t.contains('CupertinoModalPopup') || t.contains('DialogRoute');
   }
 
-  _DimState _stateFor(Route<dynamic> r) {
-    Color c = fallbackBarrierColor;
+  void _handleAnimation(Route route) {
+    if (route is ModalRoute) {
+      final progress = route.animation?.value ?? 0.0;
+      final isVisible = progress > 0.001; // Avoid jitter at zero
 
-    if (r is PopupRoute) {
-      c = r.barrierColor ?? fallbackBarrierColor;
-    } else if (r is ModalRoute) {
-      c = r.barrierColor ?? fallbackBarrierColor;
+      final color = route.barrierColor ?? fallbackBarrierColor;
+
+      NativeTabBarDimController.instance.setDimmed(dimmed: isVisible, colorArgb: color.value, blurSigma: blurSigma * progress);
     }
-
-    return _DimState(colorArgb: c.value, blurSigma: blurSigma);
-  }
-
-  void _sync() {
-    final active = _stack.isNotEmpty;
-    final state = active ? _stack.last : const _DimState(colorArgb: 0, blurSigma: 0);
-
-    scheduleMicrotask(() async {
-      await NativeTabBarDimController.instance.setDimmed(dimmed: active, colorArgb: state.colorArgb, blurSigma: state.blurSigma);
-    });
-  }
-
-  void _push(Route<dynamic> r) {
-    if (!_isDimRoute(r)) return;
-    _stack.add(_stateFor(r));
-  }
-
-  void _pop(Route<dynamic> r) {
-    if (!_isDimRoute(r)) return;
-    if (_stack.isNotEmpty) _stack.removeLast();
   }
 
   @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _push(route);
-    _sync();
-    super.didPush(route, previousRoute);
+  void didPush(Route route, Route? previousRoute) {
+    if (_isDimRoute(route) && route is ModalRoute) {
+      final listener = () => _handleAnimation(route);
+      _listeners[route] = listener;
+      route.animation?.addListener(listener);
+    }
   }
 
   @override
-  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _pop(route);
-    _sync();
-    super.didPop(route, previousRoute);
+  void didPop(Route route, Route? previousRoute) {
+    final listener = _listeners.remove(route);
+    if (listener != null && route is ModalRoute) {
+      // Ensure it continues to sync while animating out
+      route.animation?.removeListener(listener);
+      // Final sync to clean up
+      if (previousRoute == null || !_isDimRoute(previousRoute)) {
+        NativeTabBarDimController.instance.setDimmed(dimmed: false, colorArgb: 0, blurSigma: 0);
+      }
+    }
   }
-
-  @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _pop(route);
-    _sync();
-    super.didRemove(route, previousRoute);
-  }
-
-  @override
-  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    if (oldRoute != null) _pop(oldRoute);
-    if (newRoute != null) _push(newRoute);
-    _sync();
-    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
-  }
-}
-
-class _DimState {
-  const _DimState({required this.colorArgb, required this.blurSigma});
-  final int colorArgb;
-  final double blurSigma;
 }

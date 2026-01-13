@@ -233,83 +233,82 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   }
 
   // MARK: - Dimming
+// Inside CupertinoTabBarPlatformView class
+
 private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-  if dimmed {
+    // 1. Handle "Off" state
+    guard dimmed, blurSigma > 0.01 else {
+        dimOverlay?.isHidden = true
+        blurAnimator?.stopAnimation(true)
+        blurAnimator = nil
+        dimBlurView?.effect = nil
+        return
+    }
+
+    // 2. Lazy Create Overlay
     if dimOverlay == nil {
-      let overlay = UIView(frame: .zero)
-      overlay.translatesAutoresizingMaskIntoConstraints = false
-      overlay.isUserInteractionEnabled = false
-      overlay.backgroundColor = .clear
-      container.addSubview(overlay)
-      NSLayoutConstraint.activate([
-        overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-        overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        overlay.topAnchor.constraint(equalTo: container.topAnchor),
-        overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-      ])
+        let overlay = UIView()
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        overlay.isUserInteractionEnabled = false // CRITICAL: allows taps to pass through
+        container.addSubview(overlay)
 
-      // Blur
-      let blurView = UIVisualEffectView(effect: nil)
-      blurView.translatesAutoresizingMaskIntoConstraints = false
-      blurView.isUserInteractionEnabled = false
-      overlay.addSubview(blurView)
-      NSLayoutConstraint.activate([
-        blurView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
-        blurView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
-        blurView.topAnchor.constraint(equalTo: overlay.topAnchor),
-        blurView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
-      ])
+        NSLayoutConstraint.activate([
+            overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            // OVER-EXTEND top by 2pts to hide the "weird line" seam
+            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -2.0)
+        ])
 
-      // Tint
-      let tintView = UIView(frame: .zero)
-      tintView.translatesAutoresizingMaskIntoConstraints = false
-      tintView.isUserInteractionEnabled = false
-      overlay.addSubview(tintView)
-      NSLayoutConstraint.activate([
-        tintView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
-        tintView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
-        tintView.topAnchor.constraint(equalTo: overlay.topAnchor),
-        tintView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
-      ])
+        let blurView = UIVisualEffectView(effect: nil)
+        blurView.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(blurView)
 
-      dimOverlay = overlay
-      dimBlurView = blurView
-      dimTintView = tintView
+        let tintView = UIView()
+        tintView.translatesAutoresizingMaskIntoConstraints = false
+        overlay.addSubview(tintView)
+
+        NSLayoutConstraint.activate([
+            blurView.topAnchor.constraint(equalTo: overlay.topAnchor),
+            blurView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+            blurView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+            blurView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+            
+            tintView.topAnchor.constraint(equalTo: overlay.topAnchor),
+            tintView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+            tintView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+            tintView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor)
+        ])
+
+        self.dimOverlay = overlay
+        self.dimBlurView = blurView
+        self.dimTintView = tintView
     }
 
-    dimTintView?.backgroundColor = color
+    // 3. Update Visuals
     dimOverlay?.isHidden = false
-    if let overlay = dimOverlay { container.bringSubviewToFront(overlay) }
+    container.bringSubviewToFront(dimOverlay!)
+    
+    // Smoothly apply tint opacity
+    dimTintView?.backgroundColor = color 
 
-    // ---- Animatable blur intensity via fractionComplete ----
+    // 4. Scrub Blur Animator
     let style: UIBlurEffect.Style = isDarkVal ? .systemMaterialDark : .systemMaterialLight
-    let targetEffect = UIBlurEffect(style: style)
-
-    // Create animator once (or recreate if you prefer)
-    if blurAnimator == nil || blurAnimator?.state == .inactive {
-      dimBlurView?.effect = nil
-      let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
-        self?.dimBlurView?.effect = targetEffect
-      }
-      animator.pausesOnCompletion = true
-      animator.startAnimation()
-      animator.pauseAnimation()
-      blurAnimator = animator
+    
+    if blurAnimator == nil {
+        dimBlurView?.effect = nil
+        let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
+            self?.dimBlurView?.effect = UIBlurEffect(style: style)
+        }
+        animator.pausesOnCompletion = true
+        animator.startAnimation()
+        animator.pauseAnimation()
+        self.blurAnimator = animator
     }
 
-    // Map Flutter sigma -> iOS blur intensity [0..1]
-    // You can't match sigma exactly with UIKit, but this gets *very* close visually.
-    let maxSigma = 10.0 // tune this to your UI; if your blur is 5, maxSigma=10 is a good mapping
-    let t = max(0.0, min(1.0, blurSigma / maxSigma))
-    blurAnimator?.fractionComplete = CGFloat(t)
-
-  } else {
-    dimOverlay?.isHidden = true
-    // reset blur so next time starts clean
-    blurAnimator?.stopAnimation(true)
-    blurAnimator = nil
-    dimBlurView?.effect = nil
-  }
+    // Map Sigma (usually 0-5 or 0-10) to fraction (0.0 - 1.0)
+    let intensity = CGFloat(min(blurSigma / 10.0, 1.0))
+    blurAnimator?.fractionComplete = intensity
 }
 
 
