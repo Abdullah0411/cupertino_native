@@ -114,8 +114,11 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         // Flutter calls this when a modal/barrier is shown/hidden.
         let args = call.arguments as? [String: Any]
         let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
-        let opacityNum = (args?["opacity"] as? NSNumber) ?? 0.45
-        self.setDimmed(dimmed, opacity: CGFloat(truncating: opacityNum))
+
+        let colorInt = (args?["color"] as? NSNumber)?.intValue
+        let color = colorInt != nil ? Self.colorFromARGB(colorInt!) : UIColor.black.withAlphaComponent(0.45)
+
+        self.setDimmed(dimmed, color: color)
         result(nil)
 
       case "setItems":
@@ -224,30 +227,29 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 
   // MARK: - Dimming
 
-  private func setDimmed(_ dimmed: Bool, opacity: CGFloat) {
-    if dimmed {
-      if dimView == nil {
-        let v = UIView(frame: .zero)
-        v.translatesAutoresizingMaskIntoConstraints = false
-        v.isUserInteractionEnabled = false
-        container.addSubview(v)
-        NSLayoutConstraint.activate([
-          v.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-          v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-          v.topAnchor.constraint(equalTo: container.topAnchor),
-          v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        // Ensure dim is above bars
-        container.bringSubviewToFront(v)
-        dimView = v
-      }
-      dimView?.backgroundColor = UIColor.black.withAlphaComponent(opacity)
-      dimView?.isHidden = false
-      if let v = dimView { container.bringSubviewToFront(v) }
-    } else {
-      dimView?.isHidden = true
+private func setDimmed(_ dimmed: Bool, color: UIColor) {
+  if dimmed {
+    if dimView == nil {
+      let v = UIView(frame: .zero)
+      v.translatesAutoresizingMaskIntoConstraints = false
+      v.isUserInteractionEnabled = false
+      container.addSubview(v)
+      NSLayoutConstraint.activate([
+        v.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        v.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        v.topAnchor.constraint(equalTo: container.topAnchor),
+        v.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+      ])
+      dimView = v
     }
+    dimView?.backgroundColor = color
+    dimView?.isHidden = false
+    if let v = dimView { container.bringSubviewToFront(v) }
+  } else {
+    dimView?.isHidden = true
   }
+}
+
 
   // MARK: - Build / Update
 
