@@ -26,14 +26,14 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   private var tintVal: UIColor? = nil
   private var bgVal: UIColor? = nil
 
-  // Dim overlay to match Flutter modal barrier
+  // Dim overlay to match Flutter modal barrier (legacy fields kept but unused now)
   private var dimView: UIView?
   private var dimOverlay: UIView?
   private var dimBlurView: UIVisualEffectView?
   private var dimTintView: UIView?
   private var blurAnimator: UIViewPropertyAnimator?
 
-  // New: dedicated container + opaque top strip to kill seams
+  // Dedicated container to hide the native view
   private var dimContainer: UIView?
   private var dimTopStrip: UIView?
 
@@ -125,7 +125,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         let colorInt = (args?["color"] as? NSNumber)?.intValue
         let color = colorInt != nil
         ? Self.colorFromARGB(colorInt!)
-        : UIColor.black.withAlphaComponent(0.3)
+        : UIColor.black // default to solid black for maximum coverage
 
         let blurSigma = (args?["blurSigma"] as? NSNumber)?.doubleValue ?? 0.0
 
@@ -239,135 +239,50 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   // MARK: - Dimming
 
   private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-    // If turning off or negligible blur, remove and reset everything.
-    guard dimmed, blurSigma > 0.1 else {
-      blurAnimator?.stopAnimation(true)
-      blurAnimator = nil
-
-      dimTopStrip?.removeFromSuperview()
-      dimTopStrip = nil
-
-      dimTintView?.removeFromSuperview()
-      dimTintView = nil
-
-      dimBlurView?.removeFromSuperview()
-      dimBlurView = nil
-
-      dimOverlay?.removeFromSuperview()
-      dimOverlay = nil
-
-      dimView?.removeFromSuperview()
-      dimView = nil
-
+    // We ignore blurSigma and do not use blur or tint anymore.
+    if !dimmed {
       dimContainer?.removeFromSuperview()
       dimContainer = nil
+      dimView = nil
+      dimOverlay = nil
+      dimBlurView = nil
+      dimTintView = nil
+      blurAnimator?.stopAnimation(true)
+      blurAnimator = nil
       return
     }
 
-    // Build overlay container if needed.
+    // Build a single solid overlay if needed
     if dimContainer == nil {
-      let containerView = UIView()
-      containerView.translatesAutoresizingMaskIntoConstraints = false
-      containerView.isUserInteractionEnabled = false
-      containerView.clipsToBounds = false // allow extension beyond bounds
-      container.addSubview(containerView)
+      let overlay = UIView()
+      overlay.translatesAutoresizingMaskIntoConstraints = false
+      overlay.isUserInteractionEnabled = false
+      overlay.isOpaque = true
+      overlay.clipsToBounds = false
 
-      // Pin to container exactly (we'll extend the blur inside).
-      NSLayoutConstraint.activate([
-        containerView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-        containerView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        containerView.topAnchor.constraint(equalTo: container.topAnchor),
-        containerView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-      ])
+      container.addSubview(overlay)
 
-      // Blur view (extended past edges)
-      let blurView = UIVisualEffectView(effect: nil)
-      blurView.translatesAutoresizingMaskIntoConstraints = false
-      blurView.isUserInteractionEnabled = false
-      blurView.clipsToBounds = true
-      containerView.addSubview(blurView)
-
+      // Extend beyond all edges to guarantee no hairline seams
       let extend: CGFloat = 6.0
       NSLayoutConstraint.activate([
-        blurView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: -extend),
-        blurView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: extend),
-        blurView.topAnchor.constraint(equalTo: containerView.topAnchor, constant: -extend),
-        blurView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: extend)
+        overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: -extend),
+        overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: extend),
+        overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -extend),
+        overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: extend)
       ])
 
-      // Tint over blur content
-      let tintView = UIView()
-      tintView.translatesAutoresizingMaskIntoConstraints = false
-      tintView.isUserInteractionEnabled = false
-      blurView.contentView.addSubview(tintView)
-      NSLayoutConstraint.activate([
-        tintView.leadingAnchor.constraint(equalTo: blurView.contentView.leadingAnchor),
-        tintView.trailingAnchor.constraint(equalTo: blurView.contentView.trailingAnchor),
-        tintView.topAnchor.constraint(equalTo: blurView.contentView.topAnchor),
-        tintView.bottomAnchor.constraint(equalTo: blurView.contentView.bottomAnchor)
-      ])
-
-      // Top opaque strip to kill any hairline at the top edge
-      let topStrip = UIView()
-      topStrip.translatesAutoresizingMaskIntoConstraints = false
-      topStrip.isUserInteractionEnabled = false
-      topStrip.isOpaque = true
-      containerView.addSubview(topStrip)
-      NSLayoutConstraint.activate([
-        topStrip.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: -extend),
-        topStrip.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: extend),
-        topStrip.topAnchor.constraint(equalTo: containerView.topAnchor, constant: -extend),
-        topStrip.heightAnchor.constraint(equalToConstant: 2.0)
-      ])
-
-      dimContainer = containerView
-      dimOverlay = containerView
-      dimView = containerView
-      dimBlurView = blurView
-      dimTintView = tintView
-      dimTopStrip = topStrip
+      dimContainer = overlay
+      dimView = overlay
+      dimOverlay = overlay
 
       // Respect semantic direction
       applySemanticDirection()
     }
 
-    // Update colors
-    dimTintView?.backgroundColor = color
-    dimTopStrip?.backgroundColor = color.withAlphaComponent(1.0)
-
-    // Ensure visible and on top
+    // Solid color to hide native view entirely
+    dimContainer?.backgroundColor = color
     dimContainer?.isHidden = false
     if let overlay = dimContainer { container.bringSubviewToFront(overlay) }
-
-    // Prepare/rebuild blur animator if needed or if style changed
-    let desiredStyle: UIBlurEffect.Style = isDarkVal ? .systemMaterialDark : .systemMaterialLight
-    func buildAnimator() {
-      dimBlurView?.effect = nil
-      let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
-        self?.dimBlurView?.effect = UIBlurEffect(style: desiredStyle)
-      }
-      animator.pausesOnCompletion = true
-      animator.startAnimation()
-      animator.pauseAnimation()
-      blurAnimator = animator
-    }
-
-    if blurAnimator == nil {
-      buildAnimator()
-    } else {
-      // If the style flipped while active (e.g. brightness change), rebuild animator
-      if let currentEffect = dimBlurView?.effect as? UIBlurEffect {
-        // Compare style by creating a new effect; UIKit doesn't expose style on UIBlurEffect
-        blurAnimator?.stopAnimation(true)
-        blurAnimator = nil
-        dimBlurView?.effect = nil
-        buildAnimator()
-      }
-    }
-
-    // Map blurSigma (0..~10) to fractionComplete (0..1).
-    let intensity = CGFloat(min(max(blurSigma / 10.0, 0.0), 1.0))
-    blurAnimator?.fractionComplete = intensity
   }
 
   // MARK: - Build / Update
@@ -481,7 +396,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 
     applySemanticDirection()
 
-    // Keep dim overlay (if currently visible) on top
+    // Keep overlay (if currently visible) on top
     if let v = dimContainer, v.isHidden == false {
       container.bringSubviewToFront(v)
     }
