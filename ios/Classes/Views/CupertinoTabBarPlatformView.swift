@@ -233,86 +233,104 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   }
 
   // MARK: - Dimming
-// Inside CupertinoTabBarPlatformView class
 
-private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-    // 1. Clean exit if not dimmed
+  private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
+    // If turning off or negligible blur, hide and reset everything.
     guard dimmed, blurSigma > 0.1 else {
-        dimOverlay?.isHidden = true
-        blurAnimator?.stopAnimation(true)
-        blurAnimator = nil
-        dimBlurView?.effect = nil
-        return
+      if let overlay = dimOverlay {
+        overlay.isHidden = true
+        overlay.removeFromSuperview()
+      }
+      dimOverlay = nil
+      dimView = nil
+      blurAnimator?.stopAnimation(true)
+      blurAnimator = nil
+      dimBlurView = nil
+      dimTintView = nil
+      return
     }
 
-    // 2. Initialize Views if needed
+    // Lazily build overlay if needed.
     if dimOverlay == nil {
-        let overlay = UIView()
-        overlay.translatesAutoresizingMaskIntoConstraints = false
-        overlay.isUserInteractionEnabled = false // Allow taps to hit the barrier
-        container.addSubview(overlay)
+      // Use a single UIVisualEffectView as the overlay to ensure consistent blur compositing.
+      let blurView = UIVisualEffectView(effect: nil)
+      blurView.translatesAutoresizingMaskIntoConstraints = false
+      blurView.isUserInteractionEnabled = false
+      blurView.clipsToBounds = true
 
-        // FIX FOR THE WEIRD LINE: 
-        // We set the top constant to -3.0. This makes the native overlay 
-        // overlap the Flutter boundary slightly, killing the seam.
-        NSLayoutConstraint.activate([
-            overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -3.0) 
-        ])
+      // Tint view on top of blur content to match Flutter barrier color.
+      let tintView = UIView()
+      tintView.translatesAutoresizingMaskIntoConstraints = false
+      tintView.isUserInteractionEnabled = false
 
-        let blurView = UIVisualEffectView(effect: nil)
-        blurView.translatesAutoresizingMaskIntoConstraints = false
-        overlay.addSubview(blurView)
+      blurView.contentView.addSubview(tintView)
+      NSLayoutConstraint.activate([
+        tintView.topAnchor.constraint(equalTo: blurView.contentView.topAnchor),
+        tintView.bottomAnchor.constraint(equalTo: blurView.contentView.bottomAnchor),
+        tintView.leadingAnchor.constraint(equalTo: blurView.contentView.leadingAnchor),
+        tintView.trailingAnchor.constraint(equalTo: blurView.contentView.trailingAnchor)
+      ])
 
-        let tintView = UIView()
-        tintView.translatesAutoresizingMaskIntoConstraints = false
-        overlay.addSubview(tintView)
+      container.addSubview(blurView)
 
-        NSLayoutConstraint.activate([
-            blurView.topAnchor.constraint(equalTo: overlay.topAnchor),
-            blurView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
-            blurView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
-            blurView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
-            
-            tintView.topAnchor.constraint(equalTo: overlay.topAnchor),
-            tintView.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
-            tintView.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: overlay.trailingAnchor)
-        ])
+      // Slightly extend beyond bounds on all edges to kill any hairline seams from
+      // fractional pixel alignment or separate compositing.
+      let inset: CGFloat = 3.0
+      NSLayoutConstraint.activate([
+        blurView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: -inset),
+        blurView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: inset),
+        blurView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: inset),
+        blurView.topAnchor.constraint(equalTo: container.topAnchor, constant: -inset)
+      ])
 
-        self.dimOverlay = overlay
-        self.dimBlurView = blurView
-        self.dimTintView = tintView
+      dimOverlay = blurView
+      dimBlurView = blurView
+      dimTintView = tintView
+      dimView = blurView
+
+      // Respect semantic direction
+      applySemanticDirection()
     }
 
-    // 3. Update visibility and bring to front
-    dimOverlay?.isHidden = false
-    container.bringSubviewToFront(dimOverlay!)
+    // Update and show
     dimTintView?.backgroundColor = color
+    dimOverlay?.isHidden = false
+    if let overlay = dimOverlay { container.bringSubviewToFront(overlay) }
 
-    // 4. Scrub the blur animation
+    // Prepare blur animator
     let style: UIBlurEffect.Style = isDarkVal ? .systemMaterialDark : .systemMaterialLight
-    
     if blurAnimator == nil {
-        dimBlurView?.effect = nil
-        // Using a linear animator allows us to map Flutter's 0.0-1.0 progress exactly
-        let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
+      dimBlurView?.effect = nil
+      let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
+        self?.dimBlurView?.effect = UIBlurEffect(style: style)
+      }
+      animator.pausesOnCompletion = true
+      animator.startAnimation()
+      animator.pauseAnimation()
+      blurAnimator = animator
+    } else {
+      // If style flipped (e.g., brightness change while active), rebuild animator.
+      if let effectView = dimBlurView, let current = (effectView.effect as? UIBlurEffect) {
+        let desired = UIBlurEffect(style: style)
+        if type(of: current) != type(of: desired) {
+          blurAnimator?.stopAnimation(true)
+          blurAnimator = nil
+          effectView.effect = nil
+          let animator = UIViewPropertyAnimator(duration: 1.0, curve: .linear) { [weak self] in
             self?.dimBlurView?.effect = UIBlurEffect(style: style)
+          }
+          animator.pausesOnCompletion = true
+          animator.startAnimation()
+          animator.pauseAnimation()
+          blurAnimator = animator
         }
-        animator.pausesOnCompletion = true
-        animator.startAnimation()
-        animator.pauseAnimation()
-        self.blurAnimator = animator
+      }
     }
 
-    // Map the Sigma value to the animator fraction (usually 0.0 to 1.0)
-    let intensity = CGFloat(min(blurSigma / 10.0, 1.0))
+    // Map blurSigma (0..~10) to fractionComplete (0..1).
+    let intensity = CGFloat(min(max(blurSigma / 10.0, 0.0), 1.0))
     blurAnimator?.fractionComplete = intensity
-}
-
-
+  }
 
   // MARK: - Build / Update
 
@@ -426,7 +444,7 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
     applySemanticDirection()
 
     // Keep dim overlay (if currently visible) on top
-    if let v = dimView, v.isHidden == false {
+    if let v = dimOverlay, v.isHidden == false {
       container.bringSubviewToFront(v)
     }
   }
@@ -459,7 +477,7 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
     if let left = tabBarLeft { applyBarAppearance(left) }
     if let right = tabBarRight { applyBarAppearance(right) }
     applySemanticDirection()
-    if let v = dimView, v.isHidden == false { container.bringSubviewToFront(v) }
+    if let v = dimOverlay, v.isHidden == false { container.bringSubviewToFront(v) }
   }
 
   // MARK: - Locale / Appearance
@@ -470,7 +488,7 @@ private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
     tabBar?.semanticContentAttribute = semantic
     tabBarLeft?.semanticContentAttribute = semantic
     tabBarRight?.semanticContentAttribute = semantic
-    dimView?.semanticContentAttribute = semantic
+    dimOverlay?.semanticContentAttribute = semantic
   }
 
   private func applyBarAppearance(_ bar: UITabBar) {
