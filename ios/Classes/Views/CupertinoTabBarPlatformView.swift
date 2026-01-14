@@ -123,7 +123,8 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
 
         let colorInt = (args?["color"] as? NSNumber)?.intValue
-        let color = UIColor.clear
+        // We’ll still accept a color from Flutter if provided, but we’ll only use it for the strip.
+        let color = colorInt != nil ? Self.colorFromARGB(colorInt!) : UIColor.black.withAlphaComponent(0.3)
 
         let blurSigma = (args?["blurSigma"] as? NSNumber)?.doubleValue ?? 0.0
 
@@ -237,10 +238,15 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   // MARK: - Dimming
 
   private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-    // We ignore blurSigma and do not use blur or tint anymore.
+    // No blur; transparent overlay with an opaque top strip to hide the seam.
     if !dimmed {
+      dimTopStrip?.removeFromSuperview()
+      dimTopStrip = nil
+
       dimContainer?.removeFromSuperview()
       dimContainer = nil
+
+      // Cleanup legacy fields
       dimView = nil
       dimOverlay = nil
       dimBlurView = nil
@@ -250,17 +256,17 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       return
     }
 
-    // Build a single solid overlay if needed
+    // Ensure container exists
     if dimContainer == nil {
       let overlay = UIView()
       overlay.translatesAutoresizingMaskIntoConstraints = false
       overlay.isUserInteractionEnabled = false
-      overlay.isOpaque = true
+      overlay.isOpaque = false
+      overlay.backgroundColor = .clear
       overlay.clipsToBounds = false
 
       container.addSubview(overlay)
 
-      // Extend beyond all edges to guarantee no hairline seams
       let extend: CGFloat = 6.0
       NSLayoutConstraint.activate([
         overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: -extend),
@@ -273,12 +279,40 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       dimView = overlay
       dimOverlay = overlay
 
-      // Respect semantic direction
       applySemanticDirection()
     }
 
-    // Solid color to hide native view entirely
-    dimContainer?.backgroundColor = color
+    // Ensure top strip exists
+    if dimTopStrip == nil, let overlay = dimContainer {
+      let topStrip = UIView()
+      topStrip.translatesAutoresizingMaskIntoConstraints = false
+      topStrip.isUserInteractionEnabled = false
+      topStrip.isOpaque = true
+      overlay.addSubview(topStrip)
+
+      NSLayoutConstraint.activate([
+        topStrip.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+        topStrip.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+        topStrip.topAnchor.constraint(equalTo: overlay.topAnchor),
+        topStrip.heightAnchor.constraint(equalToConstant: 2.0)
+      ])
+
+      dimTopStrip = topStrip
+    }
+
+    // Compute an opaque strip color from provided color (or fallback to black)
+    let stripColor: UIColor = {
+      if color == .clear {
+        return .black
+      } else {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return UIColor(red: r, green: g, blue: b, alpha: 1.0)
+      }
+    }()
+
+    dimTopStrip?.backgroundColor = stripColor
+    dimContainer?.backgroundColor = .clear
     dimContainer?.isHidden = false
     if let overlay = dimContainer { container.bringSubviewToFront(overlay) }
   }
