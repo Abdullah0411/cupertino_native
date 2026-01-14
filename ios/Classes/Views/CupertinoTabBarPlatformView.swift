@@ -123,7 +123,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         let dimmed = (args?["dimmed"] as? NSNumber)?.boolValue ?? false
 
         let colorInt = (args?["color"] as? NSNumber)?.intValue
-        let color = UIColor.red 
+        let color = UIColor.clear
 
         let blurSigma = (args?["blurSigma"] as? NSNumber)?.doubleValue ?? 0.0
 
