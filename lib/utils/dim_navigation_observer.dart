@@ -24,7 +24,7 @@ class NativeTabBarDimObserver extends NavigatorObserver {
 
       NativeTabBarDimController.instance.setDimmed(
         dimmed: isVisible,
-        colorArgb: color.value,
+        colorArgb: color.toARGB32(),
         blurSigma: blurSigma * progress, // Sync blur intensity to animation
       );
     }
