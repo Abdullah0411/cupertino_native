@@ -125,7 +125,7 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
         let colorInt = (args?["color"] as? NSNumber)?.intValue
         let color = colorInt != nil
         ? Self.colorFromARGB(colorInt!)
-        : UIColor.black // default to solid black for maximum coverage
+        : UIColor.red // default to solid black for maximum coverage
 
         let blurSigma = (args?["blurSigma"] as? NSNumber)?.doubleValue ?? 0.0
 
