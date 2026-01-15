@@ -316,19 +316,18 @@ class NativeTabBarCover extends StatelessWidget {
 
         // Fade in quickly as the modal appears.
         return Stack(
+          clipBehavior: Clip.none,
           children: [
             child,
             if (show)
-              Positioned(
-                right: 0,
-                left: 0,
-                top: 0,
-                bottom: 0,
-                height: onePx,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 1.0, // keep solid; you can use p if you want
-                    child: ColoredBox(color: coverColor),
+              Positioned.fill(
+                child: SizedBox(
+                  height: 50,
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: 1.0, // keep solid; you can use p if you want
+                      child: ColoredBox(color: coverColor),
+                    ),
                   ),
                 ),
               ),
