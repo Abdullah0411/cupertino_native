@@ -26,6 +26,7 @@ class CNTabBar extends StatefulWidget {
     required this.items,
     required this.currentIndex,
     required this.onTap,
+    required this.backgroundCoverColor,
     this.tint,
     this.backgroundColor,
     this.iconSize,
@@ -38,6 +39,8 @@ class CNTabBar extends StatefulWidget {
 
   /// Items to display in the tab bar.
   final List<CNTabBarItem> items;
+
+  final Color backgroundCoverColor;
 
   /// The index of the currently selected item.
   final int currentIndex;
@@ -99,7 +102,6 @@ class _CNTabBarState extends State<CNTabBar> {
   void dispose() {
     final ch = _channel;
     if (ch != null) {
-      NativeTabBarDimController.instance.detach(ch);
       ch.setMethodCallHandler(null);
     }
     super.dispose();
@@ -162,16 +164,20 @@ class _CNTabBarState extends State<CNTabBar> {
     final h = widget.height ?? _intrinsicHeight ?? 50.0;
     if (!widget.split && widget.shrinkCentered) {
       final w = _intrinsicWidth;
-      return SizedBox(height: h, width: w, child: platformView);
+      return NativeTabBarCover(
+        coverColor: widget.backgroundCoverColor,
+        child: SizedBox(height: h, width: w, child: platformView),
+      );
     }
-    return SizedBox(height: h, child: platformView);
+    return NativeTabBarCover(
+      coverColor: widget.backgroundCoverColor,
+      child: SizedBox(height: h, child: platformView),
+    );
   }
 
   void _onCreated(int id) {
     final ch = MethodChannel('CupertinoNativeTabBar_$id');
     _channel = ch;
-
-    NativeTabBarDimController.instance.attach(ch);
 
     ch.setMethodCallHandler(_onMethodCall);
     _lastIndex = widget.currentIndex;
@@ -287,5 +293,42 @@ class _CNTabBarState extends State<CNTabBar> {
         if (w != null && w > 0) _intrinsicWidth = w;
       });
     } catch (_) {}
+  }
+}
+
+class NativeTabBarCover extends StatelessWidget {
+  const NativeTabBarCover({
+    super.key,
+    required this.child,
+    required this.coverColor, // background behind the tab bar
+  });
+
+  final Widget child;
+  final Color coverColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: NativeTabBarCoverController.instance.progress,
+      builder: (_, p, __) {
+        final show = p > 0.0;
+
+        // Fade in quickly as the modal appears.
+        return Stack(
+          children: [
+            Positioned.fill(child: child),
+            if (show)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 1.0, // keep solid; you can use p if you want
+                    child: ColoredBox(color: coverColor),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 }

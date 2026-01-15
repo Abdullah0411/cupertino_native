@@ -1,22 +1,19 @@
-import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
-class NativeTabBarDimController {
-  NativeTabBarDimController._();
-  static final instance = NativeTabBarDimController._();
+class NativeTabBarCoverController {
+  NativeTabBarCoverController._();
+  static final instance = NativeTabBarCoverController._();
 
-  MethodChannel? _channel;
+  /// 0..1 (route transition progress)
+  final ValueNotifier<double> progress = ValueNotifier<double>(0.0);
 
-  void attach(MethodChannel channel) => _channel = channel;
+  /// If you want to also sync the barrier color:
+  final ValueNotifier<Color> barrierColor = ValueNotifier<Color>(const Color(0x00000000));
 
-  void detach(MethodChannel channel) {
-    if (_channel == channel) _channel = null;
+  void set({required double progressValue, required Color color}) {
+    progress.value = progressValue.clamp(0.0, 1.0);
+    barrierColor.value = color;
   }
 
-  Future<void> setDimmed({required bool dimmed, required int colorArgb, required double blurSigma}) async {
-    final ch = _channel;
-    if (ch == null) return;
-    try {
-      await ch.invokeMethod('setModalDimmed', {'dimmed': dimmed, 'color': colorArgb, 'blurSigma': blurSigma});
-    } catch (_) {}
-  }
+  void clear() => set(progressValue: 0.0, color: const Color(0x00000000));
 }
