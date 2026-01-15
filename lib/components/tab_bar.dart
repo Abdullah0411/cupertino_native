@@ -1,7 +1,6 @@
 import 'package:cupertino_native/utils/native_tabbar_dim_controller.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../channel/params.dart';
@@ -160,46 +159,12 @@ class _CNTabBarState extends State<CNTabBar> {
             onPlatformViewCreated: _onCreated,
           );
 
-    final rawH = widget.height ?? _intrinsicHeight ?? 50.0;
-    final h = _snapToPhysicalPx(context, rawH);
-    final onePx = 1 / MediaQuery.of(context).devicePixelRatio;
-
+    final h = widget.height ?? _intrinsicHeight ?? 50.0;
     if (!widget.split && widget.shrinkCentered) {
-      final rawW = _intrinsicWidth ?? double.nan;
-      final w = rawW.isNaN ? null : _snapToPhysicalPx(context, rawW);
-
-      return SizedBox(
-        height: h,
-        width: w,
-        child: Stack(
-          children: [
-            Positioned.fill(child: platformView),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: onePx,
-              child: ColoredBox(color: Colors.black),
-            ),
-          ],
-        ),
-      );
+      final w = _intrinsicWidth;
+      return SizedBox(height: h, width: w, child: platformView);
     }
-    return SizedBox(
-      height: h,
-      child: Stack(
-        children: [
-          Positioned.fill(child: platformView),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: onePx,
-            child: ColoredBox(color: Colors.black),
-          ),
-        ],
-      ),
-    );
+    return SizedBox(height: h, child: platformView);
   }
 
   void _onCreated(int id) {
@@ -322,10 +287,5 @@ class _CNTabBarState extends State<CNTabBar> {
         if (w != null && w > 0) _intrinsicWidth = w;
       });
     } catch (_) {}
-  }
-
-  double _snapToPhysicalPx(BuildContext context, double v) {
-    final dpr = MediaQuery.of(context).devicePixelRatio;
-    return (v * dpr).round() / dpr; // try round first; if still shows, use ceil
   }
 }
