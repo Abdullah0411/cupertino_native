@@ -174,7 +174,7 @@ class _CNTabBarState extends State<CNTabBar> {
 
     final onePx = 1 / MediaQuery.of(context).devicePixelRatio;
 
-    Stack(
+    return Stack(
       children: [
         Positioned.fill(child: platformView),
         Positioned(
