@@ -162,29 +162,43 @@ class _CNTabBarState extends State<CNTabBar> {
 
     final rawH = widget.height ?? _intrinsicHeight ?? 50.0;
     final h = _snapToPhysicalPx(context, rawH);
-    final Widget view;
+    final onePx = 1 / MediaQuery.of(context).devicePixelRatio;
+
     if (!widget.split && widget.shrinkCentered) {
       final rawW = _intrinsicWidth ?? double.nan;
       final w = rawW.isNaN ? null : _snapToPhysicalPx(context, rawW);
 
-      view = SizedBox(height: h, width: w, child: platformView);
-    } else {
-      view = SizedBox(height: h, child: platformView);
-    }
-
-    final onePx = 1 / MediaQuery.of(context).devicePixelRatio;
-
-    return Stack(
-      children: [
-        Positioned.fill(child: view),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: onePx,
-          child: ColoredBox(color: Colors.black),
+      return SizedBox(
+        height: h,
+        width: w,
+        child: Stack(
+          children: [
+            Positioned.fill(child: platformView),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: onePx,
+              child: ColoredBox(color: Colors.black),
+            ),
+          ],
         ),
-      ],
+      );
+    }
+    return SizedBox(
+      height: h,
+      child: Stack(
+        children: [
+          Positioned.fill(child: platformView),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: onePx,
+            child: ColoredBox(color: Colors.black),
+          ),
+        ],
+      ),
     );
   }
 
