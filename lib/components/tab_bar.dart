@@ -316,7 +316,7 @@ class NativeTabBarCover extends StatelessWidget {
         // Fade in quickly as the modal appears.
         return Stack(
           children: [
-            Positioned.fill(child: child),
+            child,
             if (show)
               Positioned.fill(
                 child: IgnorePointer(
