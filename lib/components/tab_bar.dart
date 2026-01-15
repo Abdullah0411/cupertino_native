@@ -159,9 +159,12 @@ class _CNTabBarState extends State<CNTabBar> {
             onPlatformViewCreated: _onCreated,
           );
 
-    final h = widget.height ?? _intrinsicHeight ?? 50.0;
+    final rawH = widget.height ?? _intrinsicHeight ?? 50.0;
+    final h = _snapToPhysicalPx(context, rawH);
     if (!widget.split && widget.shrinkCentered) {
-      final w = _intrinsicWidth;
+      final rawW = _intrinsicWidth ?? double.nan;
+      final w = rawW.isNaN ? null : _snapToPhysicalPx(context, rawW);
+      
       return SizedBox(height: h, width: w, child: platformView);
     }
     return SizedBox(height: h, child: platformView);
@@ -287,5 +290,10 @@ class _CNTabBarState extends State<CNTabBar> {
         if (w != null && w > 0) _intrinsicWidth = w;
       });
     } catch (_) {}
+  }
+
+  double _snapToPhysicalPx(BuildContext context, double v) {
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    return (v * dpr).round() / dpr; // try round first; if still shows, use ceil
   }
 }
