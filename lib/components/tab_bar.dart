@@ -308,6 +308,7 @@ class NativeTabBarCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onePx = 1 / MediaQuery.of(context).devicePixelRatio;
     return ValueListenableBuilder<double>(
       valueListenable: NativeTabBarCoverController.instance.progress,
       builder: (_, p, __) {
@@ -318,7 +319,12 @@ class NativeTabBarCover extends StatelessWidget {
           children: [
             child,
             if (show)
-              Positioned.fill(
+              Positioned(
+                right: 0,
+                left: 0,
+                top: 0,
+                bottom: 0,
+                height: onePx,
                 child: IgnorePointer(
                   child: Opacity(
                     opacity: 1.0, // keep solid; you can use p if you want
