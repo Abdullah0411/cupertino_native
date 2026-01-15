@@ -176,7 +176,7 @@ class _CNTabBarState extends State<CNTabBar> {
 
     return Stack(
       children: [
-        Positioned.fill(child: platformView),
+        Positioned.fill(child: view),
         Positioned(
           left: 0,
           right: 0,
