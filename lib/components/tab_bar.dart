@@ -322,7 +322,7 @@ class NativeTabBarCover extends StatelessWidget {
             if (show)
               Positioned.fill(
                 child: SizedBox(
-                  height: 50,
+                  height: 150,
                   child: IgnorePointer(
                     child: Opacity(
                       opacity: 1.0, // keep solid; you can use p if you want
