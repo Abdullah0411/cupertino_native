@@ -238,8 +238,14 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
   // MARK: - Dimming
 
   private func setDimmed(_ dimmed: Bool, color: UIColor, blurSigma: Double) {
-    // No blur; transparent overlay with an opaque top strip to hide the seam.
+    // Hide or show the native tab bars while dimmed to avoid any seam.
     if !dimmed {
+      // Unhide bars
+      tabBar?.isHidden = false
+      tabBarLeft?.isHidden = false
+      tabBarRight?.isHidden = false
+
+      // Remove overlay/strip
       dimTopStrip?.removeFromSuperview()
       dimTopStrip = nil
 
@@ -267,12 +273,12 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
 
       container.addSubview(overlay)
 
-      let extend: CGFloat = 6.0
+      // Pin exactly to the container edges (no negative insets).
       NSLayoutConstraint.activate([
-        overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: -extend),
-        overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: extend),
-        overlay.topAnchor.constraint(equalTo: container.topAnchor, constant: -extend),
-        overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: extend)
+        overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+        overlay.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        overlay.topAnchor.constraint(equalTo: container.topAnchor),
+        overlay.bottomAnchor.constraint(equalTo: container.bottomAnchor)
       ])
 
       dimContainer = overlay
@@ -311,10 +317,18 @@ final class CupertinoTabBarPlatformView: NSObject, FlutterPlatformView, UITabBar
       }
     }()
 
+    // Apply colors and stacking
     dimTopStrip?.backgroundColor = stripColor
+    // Keep overlay clear by default; set to `color` if you want a tinted cover:
+    // dimContainer?.backgroundColor = color
     dimContainer?.backgroundColor = .clear
     dimContainer?.isHidden = false
     if let overlay = dimContainer { container.bringSubviewToFront(overlay) }
+
+    // Finally hide the bars so nothing underneath can show through.
+    tabBar?.isHidden = true
+    tabBarLeft?.isHidden = true
+    tabBarRight?.isHidden = true
   }
 
   // MARK: - Build / Update
